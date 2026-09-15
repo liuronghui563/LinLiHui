@@ -1,10 +1,12 @@
 package com.chengqu.huzhu.aid.entity;
 
+import com.chengqu.huzhu.common.jpa.StringListJsonConverter;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -26,7 +28,7 @@ public class AidRequest {
     private String category;
 
     @Enumerated(EnumType.STRING)
-    @Column(length = 20)
+    @Column(nullable = false, length = 20)
     private AidBoard board;
 
     @Column(nullable = false, length = 200)
@@ -46,6 +48,10 @@ public class AidRequest {
 
     @Column(length = 50)
     private String helperName;
+
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private List<String> images;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

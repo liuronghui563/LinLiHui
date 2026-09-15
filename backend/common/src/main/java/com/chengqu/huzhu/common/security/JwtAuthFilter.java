@@ -24,6 +24,7 @@ import java.io.IOException;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtSupport jwtSupport;
+    private final TokenRevocationService tokenRevocationService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -33,15 +34,20 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             try {
                 Claims claims = jwtSupport.parse(token);
                 if (jwtSupport.isAccessToken(claims)) {
-                    Long userId = Long.valueOf(claims.getSubject());
-                    String phone = claims.get(JwtSupport.CLAIM_PHONE, String.class);
-                    String nickname = claims.get(JwtSupport.CLAIM_NICKNAME, String.class);
-                    String role = claims.get(JwtSupport.CLAIM_ROLE, String.class);
-                    UserPrincipal principal = new UserPrincipal(userId, phone, nickname, role);
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                    if (tokenRevocationService.isRevoked(claims)) {
+                        // 已登出 / 已被强制下线的令牌：不建立认证信息，后续由 Security 返回 401
+                        log.debug("[鉴权] 令牌已吊销，拒绝认证 sub={}", claims.getSubject());
+                    } else {
+                        Long userId = Long.valueOf(claims.getSubject());
+                        String phone = claims.get(JwtSupport.CLAIM_PHONE, String.class);
+                        String nickname = claims.get(JwtSupport.CLAIM_NICKNAME, String.class);
+                        String role = claims.get(JwtSupport.CLAIM_ROLE, String.class);
+                        UserPrincipal principal = new UserPrincipal(userId, phone, nickname, role);
+                        UsernamePasswordAuthenticationToken authentication =
+                                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                    }
                 }
             } catch (JwtException | IllegalArgumentException e) {
                 log.debug("JWT 无效: {}", e.getMessage());

@@ -1,38 +1,79 @@
 <template>
-  <section class="comments">
-    <button type="button" class="toggle" @click="toggle">
+  <div class="comments">
+    <button
+      type="button"
+      class="toggle btn btn--ghost btn--sm"
+      :aria-expanded="open"
+      @click="toggle"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.7"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+        class="toggle-icon"
+      >
+        <path d="M20 12a7.5 7.5 0 0 1-11 6.6L4 20l1.4-4.2A7.5 7.5 0 1 1 20 12Z" />
+      </svg>
       评论 {{ total }}
     </button>
+
     <div v-if="open" class="box">
-      <p v-if="error" class="error">{{ error }}</p>
-      <ul>
+      <SkeletonList v-if="loading" :count="2" />
+
+      <p v-else-if="error" class="error">{{ error }}</p>
+
+      <p v-else-if="!comments.length" class="hint">还没有评论，来说点什么吧。</p>
+
+      <ul v-else class="comment-list">
         <li v-for="item in comments" :key="item.id">
-          <div class="head">
+          <div class="comment-head">
             <PostAuthor
               :user-id="item.authorId"
               :name="item.authorName"
               :avatar="item.authorAvatar"
+              size="xs"
             />
-            <span>{{ formatTime(item.createdAt) }}</span>
+            <span class="comment-time">{{ relativeTime(item.createdAt) }}</span>
           </div>
-          <p>{{ item.content }}</p>
-          <button v-if="canDelete(item)" type="button" class="del" @click="onDelete(item)">删除</button>
+          <p class="comment-body">{{ item.content }}</p>
+          <button
+            v-if="canDelete(item)"
+            type="button"
+            class="btn btn--quiet btn--sm link-danger"
+            @click="onDelete(item)"
+          >
+            删除
+          </button>
         </li>
-        <li v-if="!comments.length && !loading" class="empty">还没有评论</li>
       </ul>
-      <form @submit.prevent="onSubmit">
-        <input v-model.trim="draft" maxlength="500" placeholder="写一条评论…" />
-        <button type="submit" class="primary" :disabled="sending || !draft">发送</button>
+
+      <form class="comment-form" @submit.prevent="onSubmit">
+        <input
+          v-model.trim="draft"
+          class="input"
+          maxlength="500"
+          placeholder="写一条评论…"
+          :disabled="sending"
+        />
+        <button type="submit" class="btn btn--primary btn--sm" :disabled="sending || !draft">
+          {{ sending ? '发送中…' : '发送' }}
+        </button>
       </form>
     </div>
-  </section>
+  </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { addComment, deleteComment, fetchComments } from '../api/community'
 import { useAuthStore } from '../stores/auth'
+import { relativeTime } from '../utils/format'
 import PostAuthor from './PostAuthor.vue'
+import SkeletonList from './SkeletonList.vue'
 
 const props = defineProps({
   postId: { type: [Number, String], required: true },
@@ -48,12 +89,7 @@ const comments = ref([])
 const draft = ref('')
 const error = ref('')
 
-const total = computed(() => comments.value.length || props.count || 0)
-
-function formatTime(value) {
-  if (!value) return ''
-  return String(value).replace('T', ' ').slice(0, 16)
-}
+const total = computed(() => (comments.value.length || props.count || 0))
 
 function canDelete(item) {
   return auth.isAdmin || item.authorId === auth.user?.id
@@ -94,7 +130,7 @@ async function onSubmit() {
 }
 
 async function onDelete(item) {
-  if (!confirm('删除这条评论？')) return
+  if (!window.confirm('删除这条评论？')) return
   try {
     await deleteComment(item.id)
     comments.value = comments.value.filter((c) => c.id !== item.id)
@@ -111,82 +147,97 @@ watch(() => props.postId, () => {
 </script>
 
 <style scoped>
+.comments {
+  display: contents;
+}
+
 .toggle {
-  border: 1px solid var(--line);
-  background: #fff;
-  padding: 6px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
+.toggle-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* 评论区是白卡里的一块「米白井」：靠表面色差分隔，不加描边也不加阴影 */
 .box {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  flex-basis: 100%;
+  margin-top: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--parchment);
+  border-radius: var(--r-lg);
+  display: grid;
+  gap: var(--sp-3);
 }
 
-ul {
+.comment-list {
   list-style: none;
-  margin: 0 0 12px;
+  margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px;
+  gap: var(--sp-3);
 }
 
-.head {
+.comment-list > li {
+  display: grid;
+  gap: 4px;
+}
+
+.comment-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--muted);
+  justify-content: space-between;
+  gap: var(--sp-2);
 }
 
-li p {
-  margin: 4px 0 0;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-
-.del {
-  margin-top: 4px;
-  border: none;
-  background: transparent;
-  color: var(--danger);
-  padding: 0;
-  cursor: pointer;
+.comment-time {
   font-size: 12px;
+  letter-spacing: -0.12px;
+  color: var(--muted-2);
 }
 
-form {
+/* 评论内容属于正文：17px / 1.47 / -0.374px，不缩到 16px */
+.comment-body {
+  font-size: 17px;
+  line-height: 1.47;
+  letter-spacing: -0.374px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 危险操作走「灰底小按钮 + 危险色文字」，不做红底大按钮 */
+.link-danger,
+.link-danger:hover {
+  justify-self: start;
+  color: var(--danger);
+}
+
+.link-danger:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.comment-form {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2);
 }
 
-input {
-  border: 1px solid var(--line);
-  padding: 8px 12px;
-  border-radius: 10px;
-}
-
-.primary {
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  padding: 8px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.empty,
+.hint,
 .error {
+  font-size: 14px;
+  letter-spacing: -0.224px;
   color: var(--muted);
-  font-size: 13px;
 }
 
 .error {
   color: var(--danger);
+}
+
+@media (max-width: 520px) {
+  .comment-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

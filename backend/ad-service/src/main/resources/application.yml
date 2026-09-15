@@ -5,35 +5,78 @@ spring:
   application:
     name: ad-service
   datasource:
-    url: jdbc:mysql://localhost:3306/chengqu_huzhu?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
-    username: root
-    password: 123456
+    # 生产环境请通过环境变量注入，不要依赖下面的开发默认值
+    url: "${DB_URL:jdbc:mysql://192.168.198.139:3306/LinLiHui?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}"
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 3
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      jpa:
+        open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.198.139}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+      database: ${REDIS_DATABASE:0}
+      timeout: 2s
+      connect-timeout: 2s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 1s
+      repositories:
+        enabled: false
   jpa:
     hibernate:
-      ddl-auto: update
+      # 建表与变更统一由 Flyway 负责，此处只校验实体与表结构是否一致
+      ddl-auto: validate
     show-sql: false
     open-in-view: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # 四个服务共用一个库，各自使用独立的历史表，避免互相干扰
+    table: flyway_schema_history_ad
+    baseline-on-migrate: true
+    baseline-version: 0
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:192.168.198.139:8848}
+        # 当前 Nacos 未开启鉴权，留空即可；开启后通过环境变量注入
+        username: ${NACOS_USERNAME:}
+        password: ${NACOS_PASSWORD:}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        ip: ${NACOS_INSTANCE_IP:}
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:192.168.198.139:8858}
+      eager: true
   jackson:
     time-zone: Asia/Shanghai
     serialization:
       write-dates-as-timestamps: false
 
-eureka:
-  client:
-    service-url:
-      defaultZone: http://localhost:8761/eureka/
-  instance:
-    prefer-ip-address: true
-
 app:
   jwt:
-    secret: chengqu-huzhu-jwt-secret-key-change-me-in-production-2026
-    access-token-expire-minutes: 30
-    refresh-token-expire-days: 7
+    # 生产环境必须通过 JWT_SECRET 覆盖；四个服务必须使用同一个值
+    secret: ${JWT_SECRET:chengqu-huzhu-jwt-secret-key-change-me-in-production-2026}
+    access-token-expire-minutes: ${JWT_ACCESS_EXPIRE_MINUTES:30}
+    refresh-token-expire-days: ${JWT_REFRESH_EXPIRE_DAYS:7}
+    # 令牌吊销名单查询失败时是否拒绝请求。false=放行（默认，避免 Redis 故障导致全站不可用）
+    revocation-fail-closed: ${JWT_REVOCATION_FAIL_CLOSED:false}
 
 logging:
   level:

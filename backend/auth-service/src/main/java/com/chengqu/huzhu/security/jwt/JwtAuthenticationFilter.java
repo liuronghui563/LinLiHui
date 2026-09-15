@@ -1,6 +1,7 @@
 package com.chengqu.huzhu.security.jwt;
 
 import com.chengqu.huzhu.common.security.JwtSupport;
+import com.chengqu.huzhu.common.security.TokenRevocationService;
 import com.chengqu.huzhu.security.CustomUserDetailsService;
 import com.chengqu.huzhu.security.LoginUser;
 import io.jsonwebtoken.Claims;
@@ -31,6 +32,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtSupport jwtSupport;
     private final CustomUserDetailsService userDetailsService;
+    private final TokenRevocationService tokenRevocationService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -39,7 +41,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
                 Claims claims = jwtSupport.parse(token);
-                if (jwtSupport.isAccessToken(claims)) {
+                if (jwtSupport.isAccessToken(claims) && !tokenRevocationService.isRevoked(claims)) {
                     Long userId = Long.valueOf(claims.getSubject());
                     LoginUser loginUser = userDetailsService.loadById(userId);
                     if (loginUser.isEnabled()) {

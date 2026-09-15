@@ -22,4 +22,6 @@ public class UpdateAidRequest {
     @NotBlank(message = "地址不能为空")
     @Size(max = 200, message = "地址最多200字")
     private String address;
+
+    private java.util.List<String> images;
 }

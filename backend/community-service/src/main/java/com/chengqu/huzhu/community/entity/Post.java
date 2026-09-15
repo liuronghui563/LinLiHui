@@ -1,10 +1,12 @@
 package com.chengqu.huzhu.community.entity;
 
+import com.chengqu.huzhu.common.jpa.StringListJsonConverter;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -34,12 +36,26 @@ public class Post {
     @Column(nullable = false)
     private Integer viewCount = 0;
 
+    /**
+     * 历史字段：仅校园频道用过，已被 {@link #kind} 取代。
+     * 代码不再写入，保留列是为了在并行开发期间避免破坏性迁移。
+     */
+    @Deprecated
     @Column(length = 50)
     private String category;
 
+    /** 帖子种类。取代 category，全站通用且带白名单校验。 */
     @Enumerated(EnumType.STRING)
-    @Column(length = 20)
+    @Column(nullable = false, length = 30)
+    private PostKind kind;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     private PostChannel channel;
+
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private List<String> images;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -58,6 +74,9 @@ public class Post {
         }
         if (channel == null) {
             channel = PostChannel.COMMUNITY;
+        }
+        if (kind == null) {
+            kind = PostKind.DAILY;
         }
     }
 

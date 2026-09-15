@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @Slf4j
 @RestControllerAdvice
@@ -33,6 +34,14 @@ public class GlobalExceptionHandler {
             message = be.getBindingResult().getFieldError().getDefaultMessage();
         }
         return ApiResponse.fail(400, message);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.OK)
+    public ApiResponse<Void> handleUploadTooLarge(MaxUploadSizeExceededException e) {
+        // 与 file-service 的 spring.servlet.multipart.max-file-size 保持一致。
+        // 这条消息是用户唯一能看到的线索，所以要给出「怎么办」而不只是「不行」。
+        return ApiResponse.fail(400, "图片太大（单张上限 8MB），请压缩后再上传");
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

@@ -17,6 +17,9 @@ public class UpdateProfileRequest {
     @Size(max = 255, message = "头像地址过长")
     private String avatar;
 
+    @Size(max = 255, message = "封面图地址过长")
+    private String coverImage;
+
     @Size(max = 200, message = "简介最多200字")
     private String bio;
 
@@ -39,7 +42,9 @@ public class UpdateProfileRequest {
     @Size(max = 30, message = "年级最多30字")
     private String grade;
 
-    private Boolean student;
+    // 学生身份只能由管理员审核认证后授予，不能自助声明：这里原本有一个 student 复选框，
+    // 谁勾上谁就能进校园模块，等于没有门槛。认证入口是 POST /api/student/verification，
+    // 通过后由服务端写 u_r_sys_user.student。
 
     private Boolean privateAccount;
 

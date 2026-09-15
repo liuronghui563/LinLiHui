@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -34,8 +35,11 @@ public class AidResponse {
     private String helperReviewContent;
     private LocalDateTime helperReviewAt;
     private boolean canReviewHelper;
+    private List<String> images;
 
     public static AidResponse from(AidRequest entity) {
+        // 头像不由实体决定：真实头像通过 Feign 从 auth-service 获取，
+        // 取不到时留空，由前端展示占位图（不再硬编码第三方图床地址）。
         return AidResponse.builder()
                 .id(entity.getId())
                 .title(entity.getTitle())
@@ -46,10 +50,9 @@ public class AidResponse {
                 .status(entity.getStatus())
                 .publisherId(entity.getPublisherId())
                 .publisherName(entity.getPublisherName())
-                .publisherAvatar("https://picsum.photos/seed/user-" + entity.getPublisherId() + "/200/200")
                 .helperId(entity.getHelperId())
                 .helperName(entity.getHelperName())
-                .helperAvatar(entity.getHelperId() == null ? null : "https://picsum.photos/seed/user-" + entity.getHelperId() + "/200/200")
+                .images(entity.getImages() == null ? List.of() : entity.getImages())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .build();

@@ -8,6 +8,7 @@ import com.chengqu.huzhu.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -68,10 +69,16 @@ public class AuthController {
         return ApiResponse.ok(authService.me(user.getId()));
     }
 
+    /**
+     * 退出登录。
+     *
+     * @param allDevices 传 {@code all=true} 时同时吊销该用户此前签发的全部令牌（退出所有设备）
+     */
     @PostMapping("/logout")
-    public ApiResponse<Void> logout() {
-        LoginUser user = SecurityUtils.currentUser();
-        authService.logout(user.getId());
-        return ApiResponse.okMessage("已退出登录");
+    public ApiResponse<Void> logout(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            @RequestParam(value = "all", defaultValue = "false") boolean allDevices) {
+        authService.logout(authorization, allDevices);
+        return ApiResponse.okMessage(allDevices ? "已退出所有设备" : "已退出登录");
     }
 }

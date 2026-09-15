@@ -1,0 +1,10 @@
+# 构建上下文只需要源码与 POM。
+# target/ 下躺着 7 个 70–85MB 的 fat jar，不排除会把构建上下文从几 MB 撑到 500MB+。
+
+**/target
+.idea/
+.run/
+*.iml
+**/*.log
+**/.DS_Store
+**/node_modules

@@ -8,6 +8,7 @@ import com.chengqu.huzhu.community.dto.CreatePostRequest;
 import com.chengqu.huzhu.community.dto.PlazaHotResponse;
 import com.chengqu.huzhu.community.dto.PostResponse;
 import com.chengqu.huzhu.community.dto.UpdatePostRequest;
+import com.chengqu.huzhu.community.entity.PostKind;
 import com.chengqu.huzhu.community.service.CommunityService;
 import com.chengqu.huzhu.community.service.PlazaHotService;
 import jakarta.validation.Valid;
@@ -17,6 +18,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/community")
@@ -29,9 +32,24 @@ public class CommunityController {
     @GetMapping("/posts")
     public ApiResponse<Page<PostResponse>> listPosts(
             @RequestParam(required = false) String channel,
-            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String kind,
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ApiResponse.ok(communityService.listPosts(channel, category, pageable));
+        return ApiResponse.ok(communityService.listPosts(channel, kind, pageable));
+    }
+
+    /**
+     * 某模块可用的帖子种类。
+     * 种类定义只存在于后端枚举里，前端拉取后渲染选择器，两端不会各维护一份。
+     */
+    @GetMapping("/post-kinds")
+    public ApiResponse<List<PostKindOption>> postKinds(@RequestParam(required = false) String module) {
+        return ApiResponse.ok(communityService.listKinds(module).stream()
+                .map(kind -> new PostKindOption(kind.name(), kind.getLabel(), kind.getHint()))
+                .toList());
+    }
+
+    /** 帖子种类选项。 */
+    public record PostKindOption(String code, String label, String hint) {
     }
 
     @GetMapping("/plaza/hot")

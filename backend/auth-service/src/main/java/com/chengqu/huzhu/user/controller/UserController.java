@@ -6,6 +6,8 @@ import com.chengqu.huzhu.security.LoginUser;
 import com.chengqu.huzhu.security.SecurityUtils;
 import com.chengqu.huzhu.user.dto.PublicUserProfile;
 import com.chengqu.huzhu.user.dto.UpdateProfileRequest;
+import com.chengqu.huzhu.user.dto.UserHomeResponse;
+import com.chengqu.huzhu.user.service.UserHomeService;
 import com.chengqu.huzhu.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import java.util.Map;
 public class UserController {
 
     private final UserService userService;
+    private final UserHomeService userHomeService;
 
     @GetMapping("/home")
     public ApiResponse<Map<String, Object>> home() {
@@ -41,6 +44,17 @@ public class UserController {
     @GetMapping("/{id}")
     public ApiResponse<PublicUserProfile> publicProfile(@PathVariable Long id) {
         return ApiResponse.ok(userService.publicProfile(id));
+    }
+
+    /**
+     * 用户主页聚合：资料 + 求助统计 + 动态统计，一次返回。
+     *
+     * <p>统计部分由 auth-service 通过 Feign 向 aid-service / community-service 获取，
+     * 下游不可用时对应字段为 null。
+     */
+    @GetMapping("/{id}/home")
+    public ApiResponse<UserHomeResponse> home(@PathVariable Long id) {
+        return ApiResponse.ok(userHomeService.home(id));
     }
 
     @PutMapping("/{id}/rating")

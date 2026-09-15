@@ -40,6 +40,24 @@ public class AdBanner {
     @Builder.Default
     private Boolean enabled = true;
 
+    /**
+     * 审核状态。默认 APPROVED：管理员直接创建的广告不经审核，
+     * 而用户提交的申请由 {@code AdService.apply} 显式写成 PENDING。
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private AdStatus status = AdStatus.APPROVED;
+
+    /** 申请提交人；管理员直接创建时为 null */
+    private Long applicantId;
+
+    /** 审核意见：驳回原因或通过备注 */
+    @Column(length = 200)
+    private String reviewNote;
+
+    private LocalDateTime reviewedAt;
+
     @Column(nullable = false)
     @Builder.Default
     private Long clickCount = 0L;

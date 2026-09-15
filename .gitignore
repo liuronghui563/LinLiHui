@@ -7,3 +7,12 @@ Thumbs.db
 backend/target/
 frontend/node_modules/
 frontend/dist/
+
+# Docker Compose 运行时变量（含数据库口令、JWT 密钥），只提交 .env.example
+.env
+.env.example
+
+
+.log
+.tmp
+.yml

@@ -6,7 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:gate": "node tests/captcha-gate.mjs",
+    "test:notify-frequency": "node tests/notify-frequency.mjs",
+    "test:profile-frequency": "node tests/profile-frequency.mjs",
+    "test:design": "node tests/design-system.mjs",
+    "test:shell": "node tests/shell-structure.mjs",
+    "test:scroll": "node tests/router-scroll.mjs",
+    "test:relation": "node tests/relation-toggle.mjs",
+    "test:ad": "node tests/ad-application.mjs"
   },
   "dependencies": {
     "axios": "^1.7.7",

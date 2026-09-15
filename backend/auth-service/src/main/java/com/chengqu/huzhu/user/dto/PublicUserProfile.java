@@ -16,6 +16,8 @@ public class PublicUserProfile {
     private String nickname;
     private String realName;
     private String avatar;
+    /** 个人主页封面图（相对路径）；未设置时为 null，前端回落到纯色 + 纹路 */
+    private String coverImage;
     private String bio;
     private PresenceStatus presenceStatus;
     private Gender gender;

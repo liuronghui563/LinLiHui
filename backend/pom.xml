@@ -19,23 +19,28 @@
 
     <modules>
         <module>common</module>
-        <module>eureka-server</module>
+        <module>api</module>
         <module>gateway</module>
         <module>auth-service</module>
         <module>aid-service</module>
         <module>community-service</module>
         <module>ad-service</module>
+        <module>file-service</module>
+        <module>notify-service</module>
     </modules>
 
     <properties>
         <java.version>17</java.version>
         <spring-cloud.version>2023.0.3</spring-cloud.version>
+        <spring-cloud-alibaba.version>2023.0.3.2</spring-cloud-alibaba.version>
         <jjwt.version>0.12.6</jjwt.version>
         <lombok.version>1.18.36</lombok.version>
+        <minio.version>8.5.17</minio.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- 先导入 Spring Cloud 官方 BOM，保证核心组件版本以此为准 -->
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
@@ -43,10 +48,32 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!--
+                Spring Cloud Alibaba BOM：2023.0.3.2 对应 Spring Cloud 2023.0.x，
+                内置 nacos-client 2.4.2。放在官方 BOM 之后导入，避免覆盖上面的版本。
+            -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>com.chengqu</groupId>
                 <artifactId>common</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <!-- 跨服务调用契约：Feign 客户端接口与共享 DTO -->
+            <dependency>
+                <groupId>com.chengqu</groupId>
+                <artifactId>api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.jsonwebtoken</groupId>

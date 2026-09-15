@@ -37,6 +37,10 @@ public class User {
     @Column(length = 255)
     private String avatar;
 
+    /** 个人主页封面图。与其他图片一样只存相对路径，非本站地址读时会回落为未设置。 */
+    @Column(length = 255)
+    private String coverImage;
+
     @Column(length = 200)
     private String bio;
 

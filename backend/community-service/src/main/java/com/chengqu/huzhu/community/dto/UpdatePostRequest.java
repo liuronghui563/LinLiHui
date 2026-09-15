@@ -10,4 +10,6 @@ public class UpdatePostRequest {
     @NotBlank(message = "内容不能为空")
     @Size(max = 1000, message = "内容最多1000字")
     private String content;
+
+    private java.util.List<String> images;
 }

@@ -1,0 +1,289 @@
+# =============================================================================
+# 邻里汇（城区互助）后端 —— Docker Compose 部署文件
+#
+# 覆盖范围：7 个 Spring Boot 服务
+#   gateway :8080  auth :8081  aid :8082  community :8083
+#   ad :8084  notify :8085  file :8086
+#
+# 基础设施（MySQL / Redis / Nacos / Sentinel Dashboard / MinIO）**不在本文件内**：
+# 它们已经跑在 192.168.198.139 这台虚拟机上，并接入外部网络 cloud-ur，
+# 本文件只负责接入 —— 见文件末尾的 `networks.cloud-ur.external: true`。
+#
+# 服务间通信有两条链路：
+#   1) 各服务访问 MySQL / Redis / Nacos / MinIO；
+#   2) 各服务把自己的**容器 IP** 注册到 Nacos，网关用 lb://<服务名> 取实例并直连该 IP。
+#      这条链路要求 7 个后端服务彼此在同一张网络上 —— 这正是接入 cloud-ur 的意义。
+#
+# 快速开始（在 192.168.198.139 上执行）：
+#   cp .env.example .env              # 可选：按需改地址与口令
+#   docker network inspect cloud-ur   # 确认外部网络已存在
+#   docker compose up -d --build
+#   docker compose ps                 # 等 healthcheck 全部变 healthy
+#   curl -i http://192.168.198.139:8080/api/ad/banners
+#
+# 所有变量都写成 ${VAR:-默认值}，因此**没有 .env 也能直接起来**。
+#
+# 关于中间件地址，默认走**宿主机已发布的端口**（192.168.198.139:3306 这类）：
+# 这是项目现有配置一直在用的地址，必然可达，且不依赖容器叫什么名字。
+# 若想改走 cloud-ur 的容器 DNS 名（少一次经由宿主机的 NAT 回环），
+# 在 .env 里把 MYSQL_HOST / REDIS_HOST / NACOS_SERVER_ADDR / SENTINEL_DASHBOARD /
+# MINIO_ENDPOINT 换掉即可 —— 前提是那些名字确实是它们在 cloud-ur 上的 DNS 名，
+# 用 `docker network inspect cloud-ur` 可以看到。改错的表现是启动时连接超时/拒绝。
+#
+# ⚠ 顶层 name 是必需的：仓库目录名是中文（城区互助），Compose 会拿目录名推导
+#   project name，而 project name 只允许小写字母、数字、- 和 _，
+#   不显式指定会直接报 invalid project name 而启动失败。
+# =============================================================================
+
+name: LinLiHui
+
+# ---------------------------------------------------------------------------
+# 复用片段（YAML 锚点，Compose 会展开后再校验，不属于 Compose 语法本身）
+# ---------------------------------------------------------------------------
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  # 给 Spring 容器留出优雅停机时间，避免被 docker 直接 SIGKILL
+  stop_grace_period: 30s
+  networks:
+    - cloud-ur
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+# 网关与全部业务服务都要读的配置
+# 中间件与后端在同一台虚拟机上，地址统一默认走宿主机已发布的端口（见文件头说明）
+x-common-env: &common-env
+  TZ: "${TZ:-Asia/Shanghai}"
+  # ---- 服务注册与发现（Nacos）----
+  NACOS_SERVER_ADDR: "${NACOS_SERVER_ADDR:-192.168.198.139:8848}"
+  NACOS_NAMESPACE: "${NACOS_NAMESPACE:-}"
+  NACOS_GROUP: "${NACOS_GROUP:-DEFAULT_GROUP}"
+  NACOS_USERNAME: "${NACOS_USERNAME:-}"
+  NACOS_PASSWORD: "${NACOS_PASSWORD:-}"
+  # 留空 = 由 nacos-client 自动探测容器 IP。7 个服务同在 cloud-ur 上，容器 IP 互通，
+  # 所以这里保持为空；注册上去的 IP 若网关路由不到（表现 503）才需要显式指定。
+  NACOS_INSTANCE_IP: "${NACOS_INSTANCE_IP:-}"
+  # ---- Sentinel Dashboard ----
+  SENTINEL_DASHBOARD: "${SENTINEL_DASHBOARD:-192.168.198.139:8858}"
+  # ---- Redis（网关不用，多传一组环境变量无副作用）----
+  REDIS_HOST: "${REDIS_HOST:-192.168.198.139}"
+  REDIS_PORT: "${REDIS_PORT:-6379}"
+  REDIS_PASSWORD: "${REDIS_PASSWORD:-123456}"
+  REDIS_DATABASE: "${REDIS_DATABASE:-0}"
+  # ---- JWT：7 个进程必须用同一个 secret，否则令牌互不认 ----
+  JWT_SECRET: "${JWT_SECRET:-chengqu-huzhu-jwt-secret-key-change-me-in-production-2026}"
+  JWT_ACCESS_EXPIRE_MINUTES: "${JWT_ACCESS_EXPIRE_MINUTES:-30}"
+  JWT_REFRESH_EXPIRE_DAYS: "${JWT_REFRESH_EXPIRE_DAYS:-7}"
+  JWT_REVOCATION_FAIL_CLOSED: "${JWT_REVOCATION_FAIL_CLOSED:-false}"
+
+# 5 个用数据库的服务共用的连接配置；JDBC URL 由 MYSQL_* 分段拼出来，便于只改一处
+x-db-env: &db-env
+  DB_URL: "jdbc:mysql://${MYSQL_HOST:-192.168.198.139}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-LinLiHui}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false"
+  DB_USERNAME: "${DB_USERNAME:-root}"
+  DB_PASSWORD: "${DB_PASSWORD:-123456}"
+
+# 所有服务共用的运行时参数
+x-service-build: &service-build
+  context: ./backend
+  dockerfile: Dockerfile
+
+# ---------------------------------------------------------------------------
+
+services:
+
+  # ========================= API 网关 :8080 =========================
+  # 前端唯一入口。只有它需要暴露到宿主机；其余 6 个服务只走 cloud-ur 内网。
+  gateway:
+    <<: *service-defaults
+    container_name: huzhu-gateway
+    build:
+      <<: *service-build
+      args:
+        SERVICE: gateway
+        SERVER_PORT: "8080"
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}"
+    image: chengqu-huzhu/gateway:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    healthcheck:
+      # 不带 -f：网关根路径返回 404 也算「进程已监听」，带 -f 会永久 unhealthy
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+    # 只为让 up 之后第一次请求就能路由成功；Nacos 是拉取式发现，顺序本身不严格
+    depends_on:
+      auth-service:
+        condition: service_started
+      aid-service:
+        condition: service_started
+      community-service:
+        condition: service_started
+      ad-service:
+        condition: service_started
+      notify-service:
+        condition: service_started
+      file-service:
+        condition: service_started
+
+  # ===================== 鉴权与用户 auth-service :8081 =====================
+  auth-service:
+    <<: *service-defaults
+    container_name: huzhu-auth-service
+    build:
+      <<: *service-build
+      args:
+        SERVICE: auth-service
+        SERVER_PORT: "8081"
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}"
+    image: chengqu-huzhu/auth-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: [*common-env, *db-env]
+      # 内部码登录口令。生产必须覆盖，或置空以彻底关闭该登录方式
+      INTERNAL_LOGIN_CODE: "${INTERNAL_LOGIN_CODE:-8461}"
+      RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-true}"
+      RATE_LIMIT_LOGIN_IP: "${RATE_LIMIT_LOGIN_IP:-20}"
+      RATE_LIMIT_LOGIN_PHONE: "${RATE_LIMIT_LOGIN_PHONE:-10}"
+      RATE_LIMIT_REGISTER_IP: "${RATE_LIMIT_REGISTER_IP:-10}"
+      RATE_LIMIT_SMS_IP: "${RATE_LIMIT_SMS_IP:-10}"
+      # 只有 auth-service 读这个变量
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
+    # ports:
+    #   - "8081:8081"   # 仅调试时打开，生产不要让业务服务直连外网
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8081/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+  # ========================== 求助 aid-service :8082 ==========================
+  aid-service:
+    <<: *service-defaults
+    container_name: huzhu-aid-service
+    build:
+      <<: *service-build
+      args:
+        SERVICE: aid-service
+        SERVER_PORT: "8082"
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}"
+    image: chengqu-huzhu/aid-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: [*common-env, *db-env]
+    # ports:
+    #   - "8082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8082/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+  # ======================= 社区 community-service :8083 =======================
+  community-service:
+    <<: *service-defaults
+    container_name: huzhu-community-service
+    build:
+      <<: *service-build
+      args:
+        SERVICE: community-service
+        SERVER_PORT: "8083"
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}"
+    image: chengqu-huzhu/community-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: [*common-env, *db-env]
+    # ports:
+    #   - "8083:8083"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8083/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+  # ========================== 广告 ad-service :8084 ==========================
+  ad-service:
+    <<: *service-defaults
+    container_name: huzhu-ad-service
+    build:
+      <<: *service-build
+      args:
+        SERVICE: ad-service
+        SERVER_PORT: "8084"
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}"
+    image: chengqu-huzhu/ad-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: [*common-env, *db-env]
+    # ports:
+    #   - "8084:8084"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8084/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+  # ========================= 通知 notify-service :8085 =========================
+  notify-service:
+    <<: *service-defaults
+    container_name: huzhu-notify-service
+    build:
+      <<: *service-build
+      args:
+        SERVICE: notify-service
+        SERVER_PORT: "8085"
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}"
+    image: chengqu-huzhu/notify-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: [*common-env, *db-env]
+    # ports:
+    #   - "8085:8085"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8085/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+  # ========================= 文件 file-service :8086 =========================
+  # 无数据库。浏览器不直连 MinIO：下载走 GET /api/file/objects/**（由本服务 getObject 代理），
+  # 因此 MINIO_ENDPOINT 用内网地址即可，不会把这个地址暴露给浏览器，无需改成对外域名。
+  file-service:
+    <<: *service-defaults
+    container_name: huzhu-file-service
+    build:
+      <<: *service-build
+      args:
+        SERVICE: file-service
+        SERVER_PORT: "8086"
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}"
+    image: chengqu-huzhu/file-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT:-http://192.168.198.139:9000}"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-admin}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:-admin123456}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-urpic}"
+    # ports:
+    #   - "8086:8086"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://127.0.0.1:8086/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+# ---------------------------------------------------------------------------
+# 网络：只接入已存在的 cloud-ur，不创建新网络，也不会随 compose down 被删掉。
+# 若网络尚未创建，先执行：
+#   docker network create cloud-ur
+# ---------------------------------------------------------------------------
+networks:
+  cloud-ur:
+    external: true

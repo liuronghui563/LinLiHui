@@ -4,6 +4,15 @@ export function fetchPosts(params = {}) {
   return http.get('/community/posts', { params })
 }
 
+/**
+ * 某模块可用的帖子种类。
+ * 种类定义在后端枚举里，前端拉取后渲染选择器，两端不各维护一份。
+ * @param {'DISCOVER'|'CAMPUS'} module
+ */
+export function fetchPostKinds(module) {
+  return http.get('/community/post-kinds', { params: { module } })
+}
+
 export function fetchPlazaHot() {
   return http.get('/community/plaza/hot')
 }

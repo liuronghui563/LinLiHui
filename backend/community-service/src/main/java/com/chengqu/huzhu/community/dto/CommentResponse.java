@@ -24,7 +24,7 @@ public class CommentResponse {
                 .postId(comment.getPostId())
                 .authorId(comment.getAuthorId())
                 .authorName(comment.getAuthorName())
-                .authorAvatar("https://picsum.photos/seed/user-" + comment.getAuthorId() + "/200/200")
+                .authorAvatar(null)
                 .content(comment.getContent())
                 .createdAt(comment.getCreatedAt())
                 .build();

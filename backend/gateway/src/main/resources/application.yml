@@ -5,12 +5,32 @@ spring:
   application:
     name: gateway
   cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:192.168.198.139:8848}
+        # 当前 Nacos 未开启鉴权，留空即可；开启后通过环境变量注入
+        username: ${NACOS_USERNAME:}
+        password: ${NACOS_PASSWORD:}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:192.168.198.139:8858}
+      eager: true
+      # WebFlux 网关走 sentinel-gateway，关掉默认的 Servlet Filter
+      filter:
+        enabled: false
+      scg:
+        fallback:
+          mode: response
+          response-status: 429
+          response-body: '{"code":429,"message":"请求过于频繁，请稍后再试"}'
     gateway:
       globalcors:
         cors-configurations:
           '[/**]':
             allowedOrigins:
-              - "http://localhost:5173"
+              - "http://localhost:5173" #todo whiteLine配置（暂为硬编码）
               - "http://127.0.0.1:5173"
             allowedMethods:
               - GET
@@ -24,12 +44,20 @@ spring:
             maxAge: 3600
       discovery:
         locator:
+          # 关闭「按服务名自动暴露路径」，只允许下面显式声明的路由通过
           enabled: false
       routes:
         - id: auth-service
           uri: lb://auth-service
           predicates:
             - Path=/api/auth/**,/api/admin/**,/api/user/**
+        # 学生认证是独立前缀，不能塞进上面那条逗号列表里指望「一起生效」。
+        # 网关关闭了按服务名自动暴露路径，没单独声明的前缀一律 HTTP 404，
+        # 表现就是认证页一加载失败，而 auth-service 本身完全正常。
+        - id: auth-student
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/student/**
         - id: aid-service
           uri: lb://aid-service
           predicates:
@@ -38,17 +66,40 @@ spring:
           uri: lb://community-service
           predicates:
             - Path=/api/community/**
+        # 邻里生活的三个新业务域（集市/圈子/回收）都由 community-service 承载，
+        # 不新增微服务模块；路由 id 按业务域命名，便于与日志、限流规则对号。
+        - id: community-market
+          uri: lb://community-service
+          predicates:
+            - Path=/api/market/**
+        - id: community-circle
+          uri: lb://community-service
+          predicates:
+            - Path=/api/circle/**
+        - id: community-recycle
+          uri: lb://community-service
+          predicates:
+            - Path=/api/recycle/**
         - id: ad-service
           uri: lb://ad-service
           predicates:
             - Path=/api/ad/**
+        - id: file-service
+          uri: lb://file-service
+          predicates:
+            - Path=/api/file/**
+        - id: notify-service
+          uri: lb://notify-service
+          predicates:
+            - Path=/api/notify/**
+        # 说明：各服务的 /internal/** 接口刻意不在以上任何规则内，
+        # 因此外部无法经网关访问，只能由集群内部通过 Feign 直连。
 
-eureka:
-  client:
-    service-url:
-      defaultZone: http://localhost:8761/eureka/
-  instance:
-    prefer-ip-address: true
+  codec:
+    # 上传图片时网关需要把 multipart 读进内存再转发。
+    # 必须大于 file-service 的 max-request-size（12MB），否则网关先拒，
+    # 用户看到的是网关的错误而不是「图片太大」。
+    max-in-memory-size: 16MB
 
 logging:
   level:

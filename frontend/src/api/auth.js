@@ -36,8 +36,12 @@ export function fetchMe() {
   return http.get('/auth/me')
 }
 
-export function logoutApi() {
-  return http.post('/auth/logout')
+/**
+ * 退出登录。
+ * @param {boolean} all 为 true 时吊销该账号全部会话（退出所有设备）
+ */
+export function logoutApi(all = false) {
+  return http.post(all ? '/auth/logout?all=true' : '/auth/logout')
 }
 
 export function fetchUserHome() {

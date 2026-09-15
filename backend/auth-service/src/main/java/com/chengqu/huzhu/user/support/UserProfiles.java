@@ -1,6 +1,7 @@
 package com.chengqu.huzhu.user.support;
 
 import com.chengqu.huzhu.auth.dto.TokenResponse;
+import com.chengqu.huzhu.common.file.LocalFileUrls;
 import com.chengqu.huzhu.user.dto.PublicUserProfile;
 import com.chengqu.huzhu.user.entity.Gender;
 import com.chengqu.huzhu.user.entity.PresenceStatus;
@@ -19,6 +20,7 @@ public final class UserProfiles {
                 .nickname(user.getNickname())
                 .realName(user.getRealName())
                 .avatar(resolveAvatar(user))
+                .coverImage(resolveCover(user))
                 .bio(user.getBio())
                 .presenceStatus(user.getPresenceStatus() == null ? PresenceStatus.OFFLINE : user.getPresenceStatus())
                 .gender(user.getGender() == null ? Gender.UNKNOWN : user.getGender())
@@ -41,6 +43,7 @@ public final class UserProfiles {
                 .nickname(user.getNickname())
                 .realName(self ? user.getRealName() : null)
                 .avatar(resolveAvatar(user))
+                .coverImage(resolveCover(user))
                 .bio(user.getBio())
                 .presenceStatus(user.getPresenceStatus() == null ? PresenceStatus.OFFLINE : user.getPresenceStatus())
                 .gender(user.getGender() == null ? Gender.UNKNOWN : user.getGender())
@@ -63,10 +66,15 @@ public final class UserProfiles {
     }
 
     public static String resolveAvatar(User user) {
-        if (StringUtils.hasText(user.getAvatar())) {
-            return user.getAvatar();
-        }
-        return "https://picsum.photos/seed/user-" + user.getId() + "/200/200";
+        return LocalFileUrls.sanitizeOptional(user.getAvatar());
+    }
+
+    /**
+     * 封面图与头像同一套规则：只接受本站相对路径。
+     * 未设置、或旧数据里的第三方图床地址，一律回落成 null —— 页面据此用纯色 + 纹路。
+     */
+    public static String resolveCover(User user) {
+        return LocalFileUrls.sanitizeOptional(user.getCoverImage());
     }
 
     public static String maskPhone(String phone) {

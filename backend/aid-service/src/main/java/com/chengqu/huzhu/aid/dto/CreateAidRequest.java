@@ -23,4 +23,7 @@ public class CreateAidRequest {
 
     @Size(max = 200, message = "地址最多200字")
     private String address;
+
+    /** 本站已上传的对象地址，最多 9 张 */
+    private java.util.List<String> images;
 }

@@ -1,6 +1,7 @@
 package com.chengqu.huzhu.ad.dto;
 
 import com.chengqu.huzhu.ad.entity.AdBanner;
+import com.chengqu.huzhu.common.file.LocalFileUrls;
 import lombok.Builder;
 import lombok.Data;
 
@@ -26,7 +27,7 @@ public class AdBannerResponse {
                 .id(entity.getId())
                 .title(entity.getTitle())
                 .subtitle(entity.getSubtitle())
-                .imageUrl(entity.getImageUrl())
+                .imageUrl(LocalFileUrls.sanitizeOptional(entity.getImageUrl()))
                 .linkUrl(entity.getLinkUrl())
                 .sortOrder(entity.getSortOrder())
                 .enabled(entity.getEnabled())

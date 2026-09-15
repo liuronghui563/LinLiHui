@@ -5,7 +5,13 @@ import com.chengqu.huzhu.auth.dto.*;
 import com.chengqu.huzhu.auth.sms.SmsCodeService;
 import com.chengqu.huzhu.auth.sms.SmsScene;
 import com.chengqu.huzhu.common.exception.BizException;
+import com.chengqu.huzhu.common.redis.RedisKeys;
+import com.chengqu.huzhu.common.redis.RedisRateLimiter;
 import com.chengqu.huzhu.common.security.JwtSupport;
+import com.chengqu.huzhu.common.security.TokenRevocationService;
+import com.chengqu.huzhu.config.AppProperties;
+import com.chengqu.huzhu.security.LoginUser;
+import com.chengqu.huzhu.security.SecurityUtils;
 import com.chengqu.huzhu.user.entity.Gender;
 import com.chengqu.huzhu.user.entity.PresenceStatus;
 import com.chengqu.huzhu.user.entity.RoleType;
@@ -21,6 +27,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
+import java.util.UUID;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -31,6 +40,9 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtSupport jwtSupport;
+    private final AppProperties appProperties;
+    private final RedisRateLimiter rateLimiter;
+    private final TokenRevocationService tokenRevocationService;
 
     public CaptchaPayload createCaptcha() {
         CaptchaPayload payload = captchaService.create();
@@ -83,6 +95,7 @@ public class AuthService {
 
     @Transactional
     public TokenResponse loginByPassword(PasswordLoginRequest request) {
+        requireLoginAttemptAllowed(request.getPhone());
         captchaService.requireVerified(request.getCaptchaId(), request.getCaptchaCode());
         User user = userRepository.findByPhone(request.getPhone())
                 .orElseThrow(() -> new BizException(401, "账号或密码错误"));
@@ -98,9 +111,35 @@ public class AuthService {
         return issueTokens(user);
     }
 
+    /**
+     * 手机号维度的登录频控。
+     *
+     * <p>网关侧的限流按 IP 计，攻击者换 IP 即可绕过；这里以手机号为维度再限一层，
+     * 让撞库在单个账号上无法提速。Redis 不可用时自动放行（限流是保护措施，不应阻断正常登录）。
+     */
+    private void requireLoginAttemptAllowed(String phone) {
+        if (!appProperties.getRateLimit().isEnabled() || !StringUtils.hasText(phone)) {
+            return;
+        }
+        long remaining = rateLimiter.tryAcquire(
+                RedisKeys.rateLimit("login-phone", phone),
+                appProperties.getRateLimit().getLoginPerMinutePerPhone(),
+                Duration.ofMinutes(1));
+        if (remaining < 0) {
+            log.warn("[鉴权] 登录尝试过于频繁，已限流 phone={}", phone);
+            throw new BizException(429, "尝试过于频繁，请 1 分钟后再试");
+        }
+    }
+
     @Transactional
     public TokenResponse loginByInternal(InternalLoginRequest request) {
-        if (!"8461".equals(request.getCode().trim())) {
+        String expected = appProperties.getInternalLoginCode();
+        if (!StringUtils.hasText(expected)) {
+            // 未配置内部码时直接关闭该登录方式，避免源码中的固定口令成为后门
+            throw new BizException(403, "内部码登录未启用");
+        }
+        if (!expected.equals(request.getCode().trim())) {
+            log.warn("[鉴权] 内部码登录失败");
             throw new BizException(403, "内部码错误");
         }
         User admin = userRepository.findFirstByRoleAndEnabledTrue(RoleType.ADMIN)
@@ -128,14 +167,20 @@ public class AuthService {
             if (!jwtSupport.isRefreshToken(claims)) {
                 throw new BizException(401, "无效的刷新令牌");
             }
+            // 刷新令牌同样要被吊销机制拦住，否则「登出」之后还能靠它换回可用的访问令牌
+            if (tokenRevocationService.isRevoked(claims)) {
+                log.warn("[鉴权] 刷新令牌已被吊销，拒绝续期 sub={}", claims.getSubject());
+                throw new BizException(401, "登录状态已失效，请重新登录");
+            }
             Long userId = Long.valueOf(claims.getSubject());
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new BizException(401, "用户不存在"));
             if (!Boolean.TRUE.equals(user.getEnabled())) {
                 throw new BizException(403, "账号已被禁用");
             }
-            log.info("[鉴权] 刷新令牌成功 userId={}", userId);
-            return issueTokens(user);
+            String sessionId = claims.get(JwtSupport.CLAIM_SESSION_ID, String.class);
+            log.info("[鉴权] 刷新令牌成功 userId={}, sid={}", userId, sessionId);
+            return buildTokens(markOnline(user), sessionId);
         } catch (JwtException | IllegalArgumentException e) {
             throw new BizException(401, "刷新令牌无效或已过期");
         }
@@ -148,24 +193,77 @@ public class AuthService {
         return UserProfiles.of(user);
     }
 
+    /**
+     * 退出登录。
+     *
+     * <p>原实现只是把在线状态改成 OFFLINE，令牌本身仍然有效——JWT 无状态，
+     * 签发后到过期前无法收回。现在按会话 ID（sid）吊销：一次登录签发的
+     * access token 与 refresh token 共用同一个 sid，吊销后两者同时失效，
+     * 因此既不会留下可续期的刷新令牌，四个业务服务也会立即拒绝该访问令牌。
+     *
+     * @param authorizationHeader 当前请求的 Authorization 头，用于取出待吊销会话
+     * @param allDevices          为 true 时自增用户令牌版本，吊销该用户全部会话（退出所有设备）
+     */
     @Transactional
-    public void logout(Long userId) {
-        userRepository.findById(userId).ifPresent(user -> {
-            user.setPresenceStatus(PresenceStatus.OFFLINE);
-            userRepository.save(user);
+    public void logout(String authorizationHeader, boolean allDevices) {
+        LoginUser user = SecurityUtils.currentUser();
+        String sessionId = resolveSessionId(authorizationHeader);
+        if (sessionId != null) {
+            tokenRevocationService.revokeSession(sessionId);
+        }
+        if (allDevices) {
+            tokenRevocationService.bumpUserTokenVersion(user.getId());
+        }
+
+        userRepository.findById(user.getId()).ifPresent(entity -> {
+            entity.setPresenceStatus(PresenceStatus.OFFLINE);
+            userRepository.save(entity);
         });
-        log.info("[鉴权] 用户退出登录 userId={}", userId);
+        log.info("[鉴权] 用户退出登录 userId={}, sid={}, allDevices={}", user.getId(), sessionId, allDevices);
+    }
+
+    /** 从当前请求的令牌中取出会话 ID。 */
+    private String resolveSessionId(String authorizationHeader) {
+        if (!StringUtils.hasText(authorizationHeader) || !authorizationHeader.startsWith("Bearer ")) {
+            log.warn("[鉴权] 退出登录未携带可解析的令牌，仅更新在线状态");
+            return null;
+        }
+        try {
+            return jwtSupport.parse(authorizationHeader.substring(7))
+                    .get(JwtSupport.CLAIM_SESSION_ID, String.class);
+        } catch (JwtException | IllegalArgumentException e) {
+            log.warn("[鉴权] 退出登录解析令牌失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     private TokenResponse issueTokens(User user) {
+        return buildTokens(markOnline(user), newSessionId());
+    }
+
+    private String newSessionId() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private User markOnline(User user) {
         PresenceStatus current = user.getPresenceStatus();
         if (current == null || current == PresenceStatus.OFFLINE) {
             user.setPresenceStatus(PresenceStatus.ONLINE);
-            user = userRepository.save(user);
+            return userRepository.save(user);
         }
-        String access = jwtSupport.createAccessToken(
-                user.getId(), user.getPhone(), user.getNickname(), user.getRole().name());
-        String refresh = jwtSupport.createRefreshToken(user.getId());
+        return user;
+    }
+
+    /**
+     * 签发一对令牌，两者共享同一个会话 ID 与当前令牌版本号。
+     * 刷新时复用原 sid，使该会话在刷新后仍可被单独吊销。
+     */
+    private TokenResponse buildTokens(User user, String sessionId) {
+        long version = tokenRevocationService.currentTokenVersion(user.getId());
+        String access = jwtSupport.createAccessToken(user.getId(), user.getPhone(), user.getNickname(),
+                user.getRole().name(), version, sessionId);
+        String refresh = jwtSupport.createRefreshToken(user.getId(), version, sessionId);
+        log.info("[鉴权] 已签发令牌 userId={}, sid={}, ver={}", user.getId(), sessionId, version);
         return TokenResponse.builder()
                 .accessToken(access)
                 .refreshToken(refresh)

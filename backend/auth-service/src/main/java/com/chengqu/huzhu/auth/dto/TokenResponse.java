@@ -24,6 +24,7 @@ public class TokenResponse {
         private String nickname;
         private String realName;
         private String avatar;
+        private String coverImage;
         private String bio;
         private PresenceStatus presenceStatus;
         private Gender gender;

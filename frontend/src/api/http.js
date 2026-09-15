@@ -42,7 +42,15 @@ http.interceptors.response.use(
     return body
   },
   async (error) => {
-    const message = error.response?.data?.message || error.message || '网络异常'
+    const status = error.response?.status
+    const body = error.response?.data
+    if (status === 429) {
+      return Promise.reject(new Error(body?.message || '请求过于频繁，请稍后再试'))
+    }
+    if (status === 503) {
+      return Promise.reject(new Error(body?.message || '服务暂时不可用，请稍后重试'))
+    }
+    const message = body?.message || error.message || '网络异常'
     return Promise.reject(new Error(message))
   }
 )

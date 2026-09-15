@@ -1,93 +1,130 @@
 <template>
   <div class="auth-page">
-    <section class="hero-panel">
-      <div class="hero-overlay">
-        <p class="eyebrow enter-rise">加入邻里网络</p>
-        <h1 class="brand-title enter-rise" style="--delay: .12s">邻里汇</h1>
-        <p class="hero-copy enter-rise" style="--delay: .24s">手机号 + 短信验证码完成注册。校园内外，都能找到愿意帮忙的人。</p>
-        <ul class="highlights">
-          <li class="enter-rise" style="--delay: .36s">三步注册</li>
-          <li class="enter-rise" style="--delay: .46s">学生专区</li>
-          <li class="enter-rise" style="--delay: .56s">邻里互助</li>
+    <aside class="auth-stage">
+      <header class="auth-stage-brand">
+        <span class="brand-mark">邻</span>
+        <span class="brand-word">邻里汇</span>
+      </header>
+      <div class="auth-stage-copy">
+        <p class="eyebrow">邻里之间</p>
+        <h1>加入邻里</h1>
+        <p class="lead">注册只需手机号与短信验证码，通过图形验证后再发送短信。</p>
+        <ul class="auth-points">
+          <li>生活广场，看看邻居在聊什么</li>
+          <li>邻里互助，求助与帮手就在身边</li>
+          <li>校园论坛，通过认证后才能进入</li>
         </ul>
       </div>
-    </section>
+      <p class="auth-stage-note">线下见面请选择公共场所，注意人身与财产安全。</p>
+    </aside>
 
-    <section class="form-panel">
-      <div class="form-card enter-slide" style="--delay: .2s">
-        <header>
-          <h2>创建账号</h2>
-          <p>先通过图形验证码，再获取短信验证码。</p>
-        </header>
-
-        <form class="auth-form" @submit.prevent="onSubmit">
-          <label>
-            <span>手机号</span>
-            <input v-model.trim="form.phone" maxlength="11" placeholder="请输入 11 位手机号" />
-          </label>
-
-          <label>
-            <span>昵称（可选）</span>
-            <input v-model.trim="form.nickname" maxlength="50" placeholder="例如：城南小李" />
-          </label>
-
-          <label>
-            <span>密码</span>
-            <input v-model="form.password" type="password" placeholder="6-32 位密码" />
-          </label>
-
-          <div class="captcha-row">
-            <label>
-              <span>图形验证码</span>
+    <div class="auth-panel">
+      <div class="auth-shell">
+        <div class="form-card enter-rise">
+          <form class="auth-form" @submit.prevent="onSubmit">
+            <div class="field">
+              <label for="reg-phone">手机号</label>
               <input
-                v-model.trim="form.captchaCode"
-                maxlength="6"
-                placeholder="发短信前必填"
-                :disabled="captchaVerified"
-              />
-            </label>
-            <div class="captcha-side">
-              <span v-if="captchaVerified" class="verified">已验证 {{ captchaHoldLeft }}s</span>
-              <CaptchaCanvas
-                :challenge="captchaChallenge"
-                :loading="loadingCaptcha"
-                @refresh="loadCaptcha"
+                id="reg-phone"
+                v-model.trim="form.phone"
+                class="input"
+                inputmode="numeric"
+                maxlength="11"
+                placeholder="11 位手机号"
               />
             </div>
-          </div>
 
-          <div class="sms-row">
-            <label>
-              <span>短信验证码</span>
-              <input v-model.trim="form.smsCode" maxlength="8" placeholder="请输入短信验证码" />
-            </label>
-            <button type="button" class="ghost" :disabled="smsCooldown > 0 || sendingSms" @click="onSendSms">
-              {{ smsCooldown > 0 ? `${smsCooldown}s` : '获取验证码' }}
+            <div class="field">
+              <label for="reg-nickname">昵称（可选）</label>
+              <input
+                id="reg-nickname"
+                v-model.trim="form.nickname"
+                class="input"
+                maxlength="50"
+                placeholder="城南小李"
+              />
+            </div>
+
+            <div class="field">
+              <label for="reg-password">密码</label>
+              <input
+                id="reg-password"
+                v-model="form.password"
+                class="input"
+                type="password"
+                placeholder="6-32 位"
+              />
+            </div>
+
+            <p v-if="!phoneReady" class="gate-locked">
+              请先填写 11 位手机号，再确认图形验证码。
+            </p>
+
+            <CaptchaGate
+              v-if="phoneReady"
+              v-model="form.captchaCode"
+              input-id="reg-captcha"
+              step="2"
+              :challenge="captchaChallenge"
+              :loading="loadingCaptcha"
+              :confirming="confirmingCaptcha"
+              :verified="captchaVerified"
+              :hold-left="captchaHoldLeft"
+              @refresh="loadCaptcha"
+              @confirm="onConfirmCaptcha"
+            />
+
+            <div v-if="phoneReady && captchaVerified" class="sms-row">
+              <div class="field">
+                <label for="reg-sms">短信验证码</label>
+                <input
+                  id="reg-sms"
+                  v-model.trim="form.smsCode"
+                  class="input"
+                  maxlength="8"
+                  placeholder="短信验证码"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn--ghost sms-btn"
+                :disabled="smsCooldown > 0 || sendingSms"
+                @click="onSendSms"
+              >
+                {{ smsCooldown > 0 ? `${smsCooldown}s 后重发` : '获取验证码' }}
+              </button>
+            </div>
+
+            <p v-if="error" class="form-error">{{ error }}</p>
+
+            <button
+              class="btn btn--primary btn--block"
+              type="submit"
+              :disabled="submitting || !captchaVerified"
+            >
+              {{ submitting ? '注册中…' : '注册并登录' }}
             </button>
-          </div>
+          </form>
+        </div>
 
-          <p v-if="error" class="error">{{ error }}</p>
-          <button class="primary" type="submit" :disabled="submitting">
-            {{ submitting ? '注册中…' : '注册并登录' }}
-          </button>
-        </form>
-
-        <footer class="foot">
-          <span>已有账号？</span>
-          <router-link to="/login">去登录</router-link>
+        <footer class="auth-foot">
+          <p class="foot">
+            <span>已有账号？</span>
+            <router-link to="/login">去登录</router-link>
+          </p>
         </footer>
       </div>
-    </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { sendSms } from '../api/auth'
 import { useAuthStore } from '../stores/auth'
-import CaptchaCanvas from '../components/CaptchaCanvas.vue'
-import { phoneError, shouldRefreshCaptcha, useCaptcha } from '../composables/useCaptcha'
+import CaptchaGate from '../components/CaptchaGate.vue'
+import { isCaptchaError, isPhoneReady, phoneError, useCaptcha } from '../composables/useCaptcha'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -107,13 +144,33 @@ const smsCooldown = ref(0)
 const error = ref('')
 let timer = null
 
-const { captchaChallenge, loadingCaptcha, captchaVerified, captchaHoldLeft, loadCaptcha } = useCaptcha(form, error)
+const {
+  captchaChallenge,
+  loadingCaptcha,
+  confirmingCaptcha,
+  captchaVerified,
+  captchaHoldLeft,
+  loadCaptcha,
+  confirmCaptcha
+} = useCaptcha(form, error)
+
+const phoneReady = computed(() => isPhoneReady(form.phone))
+
+function onConfirmCaptcha() {
+  confirmCaptcha()
+}
+
+async function recoverIfCaptchaError(message) {
+  if (!isCaptchaError(message)) return
+  await loadCaptcha()
+  error.value = message
+}
 
 async function onSendSms() {
   error.value = phoneError(form.phone)
   if (error.value) return
-  if (!form.captchaCode) {
-    error.value = '请输入图形验证码'
+  if (!captchaVerified.value) {
+    error.value = '请先确认图形验证码'
     return
   }
   sendingSms.value = true
@@ -135,27 +192,27 @@ async function onSendSms() {
     }, 1000)
   } catch (e) {
     error.value = e.message
-    if (shouldRefreshCaptcha(e.message, captchaVerified.value)) {
-      await loadCaptcha()
-    }
+    await recoverIfCaptchaError(e.message)
   } finally {
     sendingSms.value = false
   }
 }
 
 async function onSubmit() {
-  error.value = phoneError(form.phone)
-  if (error.value) return
+  if (!phoneReady.value) {
+    error.value = phoneError(form.phone) || '请先填写 11 位手机号'
+    return
+  }
+  if (!captchaVerified.value) {
+    error.value = '请先确认图形验证码'
+    return
+  }
   if (!form.password) {
     error.value = '请输入密码'
     return
   }
   if (form.password.length < 6 || form.password.length > 32) {
     error.value = '密码长度需为 6-32 位'
-    return
-  }
-  if (!form.captchaCode) {
-    error.value = '请输入图形验证码'
     return
   }
   if (!form.smsCode) {
@@ -173,9 +230,7 @@ async function onSubmit() {
     router.replace('/')
   } catch (e) {
     error.value = e.message
-    if (shouldRefreshCaptcha(e.message, captchaVerified.value)) {
-      await loadCaptcha()
-    }
+    await recoverIfCaptchaError(e.message)
   } finally {
     submitting.value = false
   }
@@ -188,181 +243,62 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.auth-page {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-}
-
-.hero-panel {
-  position: relative;
-  overflow: hidden;
-  background: #243044;
-}
-
-.hero-panel::before {
-  content: "";
-  position: absolute;
-  inset: -8%;
-  background:
-    linear-gradient(145deg, rgba(36, 48, 68, 0.78), rgba(61, 142, 166, 0.4), rgba(224, 122, 61, 0.28)),
-    url("https://picsum.photos/id/1011/1800/1200") center/cover;
-  animation: kenburns 8s ease-out both;
-}
-
-.hero-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 64px;
-  color: #f7fbf8;
-}
-
-.eyebrow {
-  margin: 0 0 12px;
-  letter-spacing: 0.18em;
-  font-size: 13px;
-  opacity: 0.85;
-}
-
-.brand-title {
-  margin: 0;
-  font-size: clamp(48px, 7vw, 84px);
-  font-weight: 400;
-}
-
-.hero-copy {
-  margin: 18px 0 0;
-  max-width: 32ch;
-  line-height: 1.8;
-}
-
-.highlights {
-  margin: 28px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.highlights li {
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(8px);
-  font-size: 13px;
-}
-
-.form-panel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 36px clamp(18px, 4vw, 48px);
-}
-
 .form-card {
-  width: min(100%, 460px);
-  background: rgba(255, 255, 255, 0.78);
+  display: grid;
+  gap: var(--sp-5);
+  padding: var(--sp-7) var(--sp-6) var(--sp-6);
+  background-color: var(--canvas);
+  background-image: var(--texture-dots-soft);
+  background-size: var(--texture-dot-size);
   border: 1px solid var(--line);
-  border-radius: 28px;
-  box-shadow: var(--shadow);
-  padding: 36px 32px;
-  backdrop-filter: blur(16px);
-}
-
-header h2 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 500;
-}
-
-header p {
-  margin: 10px 0 0;
-  color: var(--muted);
+  border-radius: var(--r-lg);
 }
 
 .auth-form {
   display: grid;
-  gap: 14px;
-  margin-top: 28px;
+  gap: var(--sp-4);
 }
 
-label {
-  display: grid;
-  gap: 8px;
-}
-
-label span {
-  font-size: 13px;
-  color: var(--muted);
-}
-
-input {
-  width: 100%;
-  border: 1px solid var(--line);
-  background: #fff;
-  padding: 12px 14px;
-  outline: none;
-  border-radius: 12px;
-}
-
-.captcha-row,
 .sms-row {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-3);
   align-items: end;
 }
 
-.captcha-side {
-  display: grid;
-  justify-items: end;
-  gap: 6px;
-}
-
-.verified {
-  font-size: 12px;
-  color: #2d7388;
-  font-weight: 700;
-}
-
-input:disabled {
-  background: #f4eee6;
-  color: var(--muted);
-}
-
-.ghost,
-.primary {
-  border: none;
-  cursor: pointer;
-  padding: 12px 18px;
-  border-radius: 12px;
-}
-
-.ghost {
-  background: #efe4d6;
-  height: 46px;
-  white-space: nowrap;
-}
-
-.primary {
-  margin-top: 8px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.error {
+.gate-locked {
   margin: 0;
+  padding: var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--parchment);
+  font-size: 13px;
+  line-height: 1.6;
+  letter-spacing: -0.1px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.sms-btn { min-height: 44px; }
+
+.form-error {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid rgba(192, 69, 58, 0.28);
+  border-radius: var(--r-md);
   color: var(--danger);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.224px;
+}
+
+.auth-foot {
+  display: grid;
+  gap: var(--sp-2);
+  justify-items: center;
 }
 
 .foot {
-  margin-top: 18px;
+  font-size: 14px;
+  letter-spacing: -0.224px;
   color: var(--muted);
 }
 
@@ -372,23 +308,12 @@ input:disabled {
   font-weight: 600;
 }
 
-@media (max-width: 980px) {
-  .auth-page {
-    grid-template-columns: 1fr;
-  }
-
-  .hero-panel {
-    min-height: 260px;
-  }
-
-  .hero-overlay {
-    padding: 28px;
-  }
+.foot a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hero-panel::before {
-    animation: none;
-  }
+@media (max-width: 734px) {
+  .form-card { padding: var(--sp-6) var(--sp-5) var(--sp-5); }
 }
 </style>
